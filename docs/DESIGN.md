@@ -246,7 +246,31 @@ src-tauri/
 ## 8. 已确认
 
 1. frpc 随安装包内置，锁定 v0.71.1（放在 `src-tauri/binaries/`）。
-2. 首版只做 TCP 转发；udp / http / stcp 等留到后续。
+2. 配置模型覆盖 tcp / udp / http / https / stcp / xtcp / sudp；运行时联调先以 TCP 为准，其余类型按需验证。
 3. 仓库对外名称改为 `frpc-n2n-ui`（包名、窗口标题、标识符均已改）；本机目录名保持 `fprc-n2n-ui` 不动，避免工具工作目录失效。
 4. 日志默认不落盘，界面只显示最近 200 行；开启后按天写 `YYYY-MM-DD.log`，保留 7 天。
 5. 一对多：多台 frps 同时在线，每台一个独立 frpc 进程与独立配置。
+
+## 9. 当前落地状态
+
+P0 已完成：Tauri 2 + React 19 + Tailwind v4 骨架、深色令牌、应用壳、logo 与图标。
+
+P1 已完成（配置层）：
+
+- 前后端共用的 `Profile` / `Proxy` 模型；一台服务器对应一套配置、一个管理端口。
+- Rust 侧 `load_profiles` / `save_profiles`：JSON 持久化、保存前校验、生成 `frpc/<id>.toml`、清理已删除配置的旧 TOML。
+- TOML 使用 `toml` crate 序列化，不手拼字符串；token、传输协议、webServer、各类型转发字段按 frp v0.52+ 格式输出。
+- 界面支持服务器和转发的增删改，侧栏可切换多台服务器；当前状态统一显示「未启动」，进程启停属于 P2。
+- 样式继续使用 Tailwind v4 + shadcn 令牌；P1 表单用原生 `dialog` / `input` / `select`，暂不引入 Radix 依赖。
+
+下一步 P2：Rust 进程管理（无黑框启动）、stdout 日志流、admin API 轮询、`frpc verify` 与端口占用检查。
+
+P2 已完成（进程层）：
+
+- 一个 Profile 对应一个独立 frpc 进程；启动前先跑 `frpc verify`，配置不合法直接回显原因，不留下半启动进程。
+- `start_profiles` / `stop_profiles` 支持单台和批量；Windows 下使用 `CREATE_NO_WINDOW`，停止时 `kill + wait`，应用正常退出时统一收尾。
+- `runtime_snapshot` 每秒轮询进程存活状态；进程异常退出时保留最后一条 frpc 输出（已去掉 ANSI 色码）和退出码。
+- 侧栏每台服务器有独立启停按钮和勾选框；勾选后出现批量启动/停止工具条，支持全选和清空。
+- 主面板显示服务器级状态（已停止 / 运行中 / 异常）、PID 和错误原因；运行中禁用编辑、删除和转发修改，避免改了配置但进程仍用旧配置。
+
+下一步 P3：日志坞接入实时日志、admin API 逐条转发状态、端口占用检查。
