@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import {
   AlertTriangle,
   ArrowRight,
@@ -6,12 +6,14 @@ import {
   Pencil,
   Play,
   Plus,
+  Rows3,
   Server,
   Square,
   Trash2,
 } from "lucide-react"
 import { Button } from "@/components/ui/form"
 import { ProfileDialog } from "@/features/profiles/ProfileDialog"
+import { PortRangeDialog } from "@/features/proxies/PortRangeDialog"
 import { ProxyDialog } from "@/features/proxies/ProxyDialog"
 import { nextAdminPort, type Profile, type Proxy } from "@/lib/types"
 import { cn } from "@/lib/utils"
@@ -42,13 +44,23 @@ export function MainPanel() {
 
   const [editProfileOpen, setEditProfileOpen] = useState(false)
   const [proxyDialogOpen, setProxyDialogOpen] = useState(false)
+  const [rangeDialogOpen, setRangeDialogOpen] = useState(false)
   const [editingProxy, setEditingProxy] = useState<Proxy | undefined>()
+  const [selectedProxyIds, setSelectedProxyIds] = useState<string[]>([])
 
   const profile = profiles.find((item) => item.id === selectedId)
   const info = profile ? statuses[profile.id] : undefined
   const running = info?.running === true
   const processError = running ? null : (info?.error ?? null)
   const busy = profile ? pending[profile.id] === true : false
+
+  useEffect(() => {
+    setSelectedProxyIds((current) =>
+      profile
+        ? current.filter((id) => profile.proxies.some((proxy) => proxy.id === id))
+        : [],
+    )
+  }, [profile])
 
   function openProxy(proxy?: Proxy) {
     setEditingProxy(proxy)
@@ -69,6 +81,39 @@ export function MainPanel() {
       proxies: target.proxies.filter((item) => item.id !== proxy.id),
     })
   }
+
+  function toggleProxyChecked(id: string) {
+    setSelectedProxyIds((current) =>
+      current.includes(id)
+        ? current.filter((item) => item !== id)
+        : [...current, id],
+    )
+  }
+
+  function toggleAllProxies() {
+    if (!profile) return
+    setSelectedProxyIds((current) =>
+      profile.proxies.every((proxy) => current.includes(proxy.id))
+        ? []
+        : profile.proxies.map((proxy) => proxy.id),
+    )
+  }
+
+  async function deleteSelected(target: Profile) {
+    if (selectedProxyIds.length === 0) return
+    if (!window.confirm(`删除选中的 ${selectedProxyIds.length} 条转发？`)) return
+    const ids = new Set(selectedProxyIds)
+    const ok = await useProfiles.getState().save({
+      ...target,
+      proxies: target.proxies.filter((proxy) => !ids.has(proxy.id)),
+    })
+    if (ok) setSelectedProxyIds([])
+  }
+
+  const allProxiesChecked =
+    profile !== undefined &&
+    profile.proxies.length > 0 &&
+    selectedProxyIds.length === profile.proxies.length
 
   if (loading && profiles.length === 0) {
     return (
@@ -185,15 +230,37 @@ export function MainPanel() {
           <span>{profile.autoStart ? "随应用启动" : "手动启动"}</span>
           {running && <span className="text-signal">停止后可编辑配置</span>}
         </div>
-        <Button
-          variant="secondary"
-          onClick={() => openProxy()}
-          disabled={running}
-          title={running ? "请先停止服务器" : undefined}
-        >
-          <Plus className="size-3.5" />
-          添加转发
-        </Button>
+        <div className="flex items-center gap-2">
+          {selectedProxyIds.length > 0 && (
+            <Button
+              variant="danger"
+              onClick={() => void deleteSelected(profile)}
+              disabled={running}
+              title={running ? "请先停止服务器" : undefined}
+            >
+              <Trash2 className="size-3.5" />
+              删除 {selectedProxyIds.length} 条
+            </Button>
+          )}
+          <Button
+            variant="ghost"
+            onClick={() => setRangeDialogOpen(true)}
+            disabled={running}
+            title={running ? "请先停止服务器" : undefined}
+          >
+            <Rows3 className="size-3.5" />
+            批量添加
+          </Button>
+          <Button
+            variant="secondary"
+            onClick={() => openProxy()}
+            disabled={running}
+            title={running ? "请先停止服务器" : undefined}
+          >
+            <Plus className="size-3.5" />
+            添加转发
+          </Button>
+        </div>
       </div>
 
       <div className="min-h-0 flex-1 overflow-auto px-5 pb-4">
@@ -217,6 +284,16 @@ export function MainPanel() {
           <table className="w-full table-fixed border-collapse text-[13px]">
             <thead>
               <tr className="border-b border-border text-left text-xs text-muted-foreground">
+                <th className="w-10 px-3 py-2 font-normal">
+                  <input
+                    type="checkbox"
+                    checked={allProxiesChecked}
+                    onChange={toggleAllProxies}
+                    disabled={running}
+                    aria-label="全选转发"
+                    className="size-3.5 accent-[var(--signal)]"
+                  />
+                </th>
                 <th className="px-3 py-2 font-normal">名称</th>
                 <th className="w-20 px-3 py-2 font-normal">类型</th>
                 <th className="w-52 px-3 py-2 font-normal">本地</th>
@@ -230,6 +307,16 @@ export function MainPanel() {
                   key={proxy.id}
                   className="border-b border-border/70 transition-colors hover:bg-accent/40"
                 >
+                  <td className="px-3 py-2">
+                    <input
+                      type="checkbox"
+                      checked={selectedProxyIds.includes(proxy.id)}
+                      onChange={() => toggleProxyChecked(proxy.id)}
+                      disabled={running}
+                      aria-label={`选择 ${proxy.name}`}
+                      className="size-3.5 accent-[var(--signal)]"
+                    />
+                  </td>
                   <td className="px-3 py-2">
                     <span className="block truncate">{proxy.name}</span>
                   </td>
@@ -291,6 +378,11 @@ export function MainPanel() {
         onOpenChange={setProxyDialogOpen}
         profile={profile}
         proxy={editingProxy}
+      />
+      <PortRangeDialog
+        open={rangeDialogOpen}
+        onOpenChange={setRangeDialogOpen}
+        profile={profile}
       />
     </section>
   )

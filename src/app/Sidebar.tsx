@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react"
 import {
+  Download,
   Loader2,
   Monitor,
   Moon,
@@ -7,11 +8,15 @@ import {
   Plus,
   Square,
   Sun,
+  Upload,
   X,
 } from "lucide-react"
+import { open, save as saveDialog } from "@tauri-apps/plugin-dialog"
 import { Button } from "@/components/ui/form"
+import { exportProfileConfig, importProfileConfig } from "@/lib/ipc"
 import { cn } from "@/lib/utils"
 import type { ThemeMode } from "@/lib/theme"
+import { emptyProfile, nextAdminPort, type Profile } from "@/lib/types"
 import { useProfiles } from "@/store/profiles"
 import { useRuntime } from "@/store/runtime"
 import { useUi } from "@/store/ui"
@@ -26,10 +31,37 @@ const themeOptions: {
   { value: "dark", label: "深色", icon: Moon },
 ]
 
+function errorText(error: unknown) {
+  if (typeof error === "string") return error
+  if (error instanceof Error) return error.message
+  return String(error)
+}
+
+function reportError(error: unknown) {
+  useProfiles.setState({ error: errorText(error) })
+}
+
+function importedName(path: string, profiles: Profile[]) {
+  const raw =
+    path
+      .split(/[\\/]/)
+      .pop()
+      ?.replace(/\.toml$/i, "")
+      .trim() || "导入的服务器"
+  let name = raw
+  let index = 2
+  while (profiles.some((profile) => profile.name === name)) {
+    name = `${raw} ${index}`
+    index += 1
+  }
+  return name
+}
+
 export function Sidebar() {
   const profiles = useProfiles((state) => state.profiles)
   const selectedId = useProfiles((state) => state.selectedId)
   const select = useProfiles((state) => state.select)
+  const save = useProfiles((state) => state.save)
   const statuses = useRuntime((state) => state.statuses)
   const pending = useRuntime((state) => state.pending)
   const start = useRuntime((state) => state.start)
@@ -41,12 +73,41 @@ export function Sidebar() {
   const setProfileDialogOpen = useUi((state) => state.setProfileDialogOpen)
 
   const [checked, setChecked] = useState<string[]>([])
+  const [menu, setMenu] = useState<{ profile: Profile | null; x: number; y: number } | null>(
+    null,
+  )
+  const [transferring, setTransferring] = useState(false)
 
   useEffect(() => {
     setChecked((current) =>
       current.filter((id) => profiles.some((profile) => profile.id === id)),
     )
   }, [profiles])
+
+  useEffect(() => {
+    if (!menu) return
+
+    const close = () => setMenu(null)
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") close()
+    }
+    const onPointer = (event: PointerEvent) => {
+      if (!(event.target instanceof Element) || !event.target.closest("[data-server-menu]")) {
+        close()
+      }
+    }
+
+    window.addEventListener("pointerdown", onPointer)
+    window.addEventListener("blur", close)
+    window.addEventListener("keydown", onKey)
+    window.addEventListener("scroll", close, true)
+    return () => {
+      window.removeEventListener("pointerdown", onPointer)
+      window.removeEventListener("blur", close)
+      window.removeEventListener("keydown", onKey)
+      window.removeEventListener("scroll", close, true)
+    }
+  }, [menu])
 
   const allChecked = profiles.length > 0 && checked.length === profiles.length
   const hasPending = checked.some((id) => pending[id])
@@ -73,6 +134,79 @@ export function Sidebar() {
   function batchStop() {
     const ids = checked.filter((id) => statuses[id]?.running)
     if (ids.length > 0) void stop(ids)
+  }
+
+  function openMenu(event: React.MouseEvent, profile: Profile) {
+    event.preventDefault()
+    event.stopPropagation()
+    select(profile.id)
+    setMenu({
+      profile,
+      x: Math.min(event.clientX, window.innerWidth - 204),
+      y: Math.min(event.clientY, window.innerHeight - 128),
+    })
+  }
+
+  function openBlankMenu(event: React.MouseEvent) {
+    event.preventDefault()
+    setMenu({
+      profile: null,
+      x: Math.min(event.clientX, window.innerWidth - 204),
+      y: Math.min(event.clientY, window.innerHeight - 96),
+    })
+  }
+
+  async function exportConfig(profile: Profile) {
+    setMenu(null)
+    try {
+      const safeName = profile.name.replace(/[\\/:*?"<>|]/g, "_") || "frpc"
+      const path = await saveDialog({
+        defaultPath: `${safeName}.toml`,
+        filters: [{ name: "frpc TOML", extensions: ["toml"] }],
+      })
+      if (!path) return
+      setTransferring(true)
+      await exportProfileConfig(path, profile)
+    } catch (error) {
+      reportError(error)
+    } finally {
+      setTransferring(false)
+    }
+  }
+
+  async function importConfig(target?: Profile) {
+    setMenu(null)
+    try {
+      const path = await open({
+        multiple: false,
+        directory: false,
+        filters: [{ name: "frpc TOML", extensions: ["toml"] }],
+      })
+      if (typeof path !== "string") return
+      setTransferring(true)
+      if (!target) {
+        const base = {
+          ...emptyProfile(nextAdminPort(profiles)),
+          name: importedName(path, profiles),
+        }
+        const imported = await importProfileConfig(path, base)
+        await save({ ...imported, adminPort: nextAdminPort(profiles) })
+        return
+      }
+      const imported = await importProfileConfig(path, target)
+      if (
+        !window.confirm(
+          `导入将覆盖服务器「${target.name}」的当前配置，共 ${imported.proxies.length} 条转发。继续？`,
+        )
+      ) {
+        return
+      }
+      await save(imported)
+    } catch (error) {
+      reportError(error)
+    } finally {
+      setTransferring(false)
+    }
   }
 
   function startResize(event: React.PointerEvent<HTMLDivElement>) {
@@ -103,6 +237,10 @@ export function Sidebar() {
     window.addEventListener("pointerup", stop)
     window.addEventListener("pointercancel", stop)
   }
+
+  const menuRunning = menu?.profile ? statuses[menu.profile.id]?.running === true : false
+  const menuPending = menu?.profile ? pending[menu.profile.id] === true : false
+  const menuProfile = menu?.profile ?? null
 
   return (
     <aside
@@ -180,12 +318,18 @@ export function Sidebar() {
       )}
 
       {profiles.length === 0 ? (
-        <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-1 px-4 text-center">
+        <div
+          onContextMenu={openBlankMenu}
+          className="flex min-h-0 flex-1 flex-col items-center justify-center gap-1 px-4 text-center"
+        >
           <p className="text-[13px]">还没有服务器</p>
           <p className="text-xs text-muted-foreground">添加一台后就能转发端口</p>
         </div>
       ) : (
-        <div className="min-h-0 flex-1 overflow-y-auto py-1">
+        <div
+          onContextMenu={openBlankMenu}
+          className="min-h-0 flex-1 overflow-y-auto py-1"
+        >
           {profiles.map((profile) => {
             const active = profile.id === selectedId
             const info = statuses[profile.id]
@@ -196,6 +340,7 @@ export function Sidebar() {
             return (
               <div
                 key={profile.id}
+                onContextMenu={(event) => openMenu(event, profile)}
                 className={cn(
                   "flex items-center gap-1 border-l-2 pr-1.5 transition-colors",
                   active
@@ -267,6 +412,50 @@ export function Sidebar() {
               </div>
             )
           })}
+        </div>
+      )}
+
+      {menu && (
+        <div
+          data-server-menu
+          role="menu"
+          style={{ left: menu.x, top: menu.y }}
+          className="fixed z-50 w-[196px] overflow-hidden rounded-md border border-border bg-popover text-popover-foreground shadow-lg"
+        >
+          <div className="truncate border-b border-border px-3 py-2 text-xs text-muted-foreground">
+            {menuProfile?.name ?? "导入服务器"}
+          </div>
+          {menuProfile && (
+            <button
+              type="button"
+              role="menuitem"
+              disabled={transferring}
+              onClick={() => void exportConfig(menuProfile)}
+              className="flex w-full items-center gap-2 px-3 py-2 text-left text-[13px] transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50"
+            >
+              <Download className="size-3.5 shrink-0 text-muted-foreground" />
+              <span className="flex-1">导出配置</span>
+              <span className="font-mono text-[10px] text-muted-foreground/70">TOML</span>
+            </button>
+          )}
+          <button
+            type="button"
+            role="menuitem"
+            disabled={transferring || menuRunning || menuPending}
+            title={
+              menuRunning
+                ? "请先停止服务器"
+                : menuPending
+                  ? "请等待当前操作完成"
+                  : undefined
+            }
+            onClick={() => void importConfig(menuProfile ?? undefined)}
+            className="flex w-full items-center gap-2 px-3 py-2 text-left text-[13px] transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50"
+          >
+            <Upload className="size-3.5 shrink-0 text-muted-foreground" />
+            <span className="flex-1">导入配置</span>
+            <span className="font-mono text-[10px] text-muted-foreground/70">TOML</span>
+          </button>
         </div>
       )}
 

@@ -7,9 +7,12 @@ use tauri::Manager;
 pub fn run() {
   let app = tauri::Builder::default()
     .manage(runtime::RuntimeState::default())
+    .plugin(tauri_plugin_dialog::init())
     .invoke_handler(tauri::generate_handler![
       profiles::load_profiles,
       profiles::save_profiles,
+      profiles::export_profile_config,
+      profiles::import_profile_config,
       runtime::start_profiles,
       runtime::stop_profiles,
       runtime::runtime_snapshot,

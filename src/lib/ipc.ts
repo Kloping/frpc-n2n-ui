@@ -9,6 +9,14 @@ export function saveProfiles(profiles: Profile[]) {
   return invoke<string[]>("save_profiles", { profiles })
 }
 
+export function exportProfileConfig(path: string, profile: Profile) {
+  return invoke<void>("export_profile_config", { path, profile })
+}
+
+export function importProfileConfig(path: string, profile: Profile) {
+  return invoke<Profile>("import_profile_config", { path, profile })
+}
+
 export function startProfiles(ids: string[]) {
   return invoke<void>("start_profiles", { ids })
 }

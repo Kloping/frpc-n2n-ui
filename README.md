@@ -1,6 +1,6 @@
 # frpc 内网穿透管理器
 
-Windows 桌面端 frpc 可视化工具：多服务器配置、按端口转发逐条启停、实时状态与日志。
+Windows 桌面端 frpc 可视化工具：多服务器配置、按端口转发逐条启停、端口区间批量添加、实时状态与日志。
 
 技术栈：Tauri 2 + React 19 + TypeScript + Tailwind CSS v4 + shadcn/ui。
 
