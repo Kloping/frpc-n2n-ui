@@ -1,32 +1,31 @@
-# React + TypeScript + Vite
+# frpc 内网穿透管理器
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+Windows 桌面端 frpc 可视化工具：多服务器配置、按端口转发逐条启停、实时状态与日志。
 
-Currently, two official plugins are available:
+技术栈：Tauri 2 + React 19 + TypeScript + Tailwind CSS v4 + shadcn/ui。
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+## 开发
 
-## React Compiler
-
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the Oxlint configuration
-
-If you are developing a production application, we recommend enabling type-aware lint rules by installing `oxlint-tsgolint` and editing `.oxlintrc.json`:
-
-```json
-{
-  "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["react", "typescript", "oxc"],
-  "options": {
-    "typeAware": true
-  },
-  "rules": {
-    "react/rules-of-hooks": "error",
-    "react/only-export-components": ["warn", { "allowConstantExport": true }]
-  }
-}
+```bash
+npm install
+npm run tauri dev
 ```
 
-See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.
+只调前端：`npm run dev`（http://localhost:5173）
+
+## 打包
+
+```bash
+npm run tauri build
+```
+
+产物在 `src-tauri/target/release/bundle/`，NSIS 安装包按当前用户安装，不需要管理员权限。
+
+## frpc 二进制
+
+安装包内置 frpc v0.71.1，文件为 `src-tauri/binaries/frpc-x86_64-pc-windows-msvc.exe`（已 gitignore，克隆后需自行放回）。
+换版本时从 [frp releases](https://github.com/fatedier/frp/releases) 下载 `windows_amd64` 包，解压后把 `frpc.exe` 改成上面的文件名。
+
+## 设计
+
+方案、数据模型、日志策略与视觉规范见 `docs/DESIGN.md`；图标源文件在 `assets/logo.png`。
